@@ -1,6 +1,4 @@
 using JuBrain
-using Base.Test
-
 model=NetworkModel()
 
 model.parameters="""
@@ -17,3 +15,6 @@ spConnect(model,pre="e",post="all",expr="wₑ=(60*0.27/10)*mV",p=0.02)
 spConnect(model,pre="i",post="all",expr="wᵢ=(-20*4.5/10)*mV",p=0.02)
 
 buildNetwork(name="temp",model=model,duration=1000)
+@load("temp.jld")
+using MatlabPlot
+figure();mplot(tSpike,spikeNeuron,".k")
