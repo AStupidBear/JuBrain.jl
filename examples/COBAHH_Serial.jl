@@ -26,7 +26,7 @@ model.synapse="ge+=we;gi+=wi"
 model.record=[1,10,100]
 
 model.dt=0.06;model.solver="Euler4"
-buildNetwork(name="temp",model=model,duration=1000)
+buildNetwork(name="temp",model=model,duration=100)
 @load("temp.jld")
 using MatlabPlot
 figure();mplot(vRecord')

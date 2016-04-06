@@ -7,16 +7,16 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
 
   # open a file
   fid=open(name*".jl","w")
-  # add core
+  
   str="""
+  println("\\nExecuting $(name).jl")
+  
   using JLD
-
-  if $(model.nCores)<=1 && nprocs()>1
-    rmprocs(workers())
+    
+  if $(model.nCores)>0 && (addCores=$(model.nCores)-nworkers())>0
+    nworkers()==1?addprocs(addCores):addprocs(addCores-1)
   end
-  if $(model.nCores)>1 && (addCores=$(model.nCores)-nworkers())>0
-    addprocs(addCores)
-  end
+  println("Using \$(nworkers()) workers")
   """
   println(fid,str)
 
@@ -62,6 +62,16 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
 
   # function
   println(fid,"function $name(iteration::Int64=10)\n")
+    
+  # Memory use before allocation
+  str="""
+  if Sys.OS_NAME == :Linux
+    println("Memory use before allocation:")
+    run(pipeline(`free -oh`, `grep -v Swap`))
+  end
+  """
+  println(fid,str)
+  
   println(fid,"t=0.0")
   println(fid,"dt=",model.dt)
   println(fid,"N=",model.groups[:N])
@@ -86,7 +96,7 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   # report
   report="""# report
   if k%(1000÷syncIter)==0
-     @printf("%s%4.2f finished","%",100*k/iteration)
+     @printf("%s%4.2f finished\\n","%",100*k/iteration)
   end
   """
 
@@ -229,14 +239,23 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   else
     record=""
   end
-
+  
+  # Memory use after allocation
+  str="""
+  if Sys.OS_NAME == :Linux
+    println("Memory use after allocation:")
+    run(pipeline(`free -oh`, `grep -v Swap`))
+  end
+  """
+  println(fid,str)
+  
   # print status
   println(fid,"# print status")
   str="""
   if iteration>=50
-      println(\"simulation starts...\")
+      println("simulation starts...")
   else
-    println(\"compiling...\")
+    println("compiling...")
   end"""
   println(fid,str,"\n")
 
@@ -280,5 +299,5 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   # close file, open file
   close(fid)
   try run(`atom $(abspath("$name.jl"))`) end
-  include("$name.jl")
+  # include("$name.jl")
 end
