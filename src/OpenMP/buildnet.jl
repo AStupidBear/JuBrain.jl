@@ -1,18 +1,18 @@
-export buildNetwork
+export buildnet
 
-function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration=0.1)
+function buildnet(;name="temp",model=NetworkModel(),method="Euler1",duration=0.1)
   iteration=round(Int64,duration/model.dt)
   syncIter=model.synctime>0?round(Int64,model.synctime÷model.dt):1
   iteration=iteration÷syncIter
 
   # open a file
   fid=open(name*".jl","w")
-  
+
   str="""
   println("\\nExecuting $(name).jl")
-  
+
   using JLD
-    
+
   if $(model.nCores)>0 && (addCores=$(model.nCores)-nworkers())>0
     nworkers()==1?addprocs(addCores):addprocs(addCores-1)
   end
@@ -55,23 +55,26 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   argumentType=join([varsType;"t::Float64"],",");
   println(fid,"# function")
   for k=1:length(vars)
-    println(fid,"@everywhere ""F",vars[k],"(",argumentType,")=",diffEqs[k])
+    println(fid,"@everywhere F",vars[k],"(",argumentType,")=",diffEqs[k])
   end
   println(fid)
 
 
   # function
   println(fid,"function $name(iteration::Int64=10)\n")
-    
+
   # Memory use before allocation
   str="""
   if Sys.OS_NAME == :Linux
     println("Memory use before allocation:")
-    run(pipeline(`free -oh`, `grep -v Swap`))
+    run(pipeline(`free -og`, `grep -v Swap`))
+  elseif Sys.OS_NAME == :Windows
+    # println("Memory use before allocation:")
+    # run(`wmic OS get FreePhysicalMemory /Value`)
   end
   """
   println(fid,str)
-  
+
   println(fid,"t=0.0")
   println(fid,"dt=",model.dt)
   println(fid,"N=",model.groups[:N])
@@ -79,14 +82,8 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
 
   # initialize variables
   println(fid,"# initialize variables")
-  if model.nCores>0
-    for var in vars
-      println(fid,var,"=SharedArray(Float64,N)")
-    end
-  elseif model.nCores==0
-    for var in vars
-      println(fid,var,"=zeros(N)")
-    end
+  for var in vars
+    println(fid,var,"=SharedArray(Float64,N)")
   end
   println(fid,model.initialization,"\n")
 
@@ -102,11 +99,7 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
 
   # integrate
 
-  if model.nCores>0
-    argument=join([map(var->var*"[localindex]",vars);"t"],",")
-  else
-    argument=join([vars;"t"],",")
-  end
+  argument=join([map(var->var*"[localindex]",vars);"t"],",")
   splitArg=split(argument,",")
   argumentTemp=join([splitArg[1]*"+Δ$(vars[1])";splitArg[2:end]],",")
 
@@ -129,37 +122,24 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
     integrate*="Δ$(vars[k])=dt*$(func[k])\n"
   end
 
-  if model.nCores>0
-      for k=1:length(vars)
-        integrate*="$(vars[k])[localindex]+=Δ$(vars[k])\n"
-      end
-      integrate="""# integrate
-      @sync for p in workers()
-      @spawnat p begin
-      for idx=1:syncIter
-      localindex=localindexes($(vars[1]))
-      $integrate
-      end #end of sync
-      end #end of begin
-      end #end of workers
-      """
-  elseif model.nCores==0
-      for k=1:length(vars)
-        integrate*="$(vars[k])+=Δ$(vars[k])\n"
-      end
-      integrate="""# integrate
-      for idx=1:syncIter
-      $integrate
-      end
-      """
+  for k=1:length(vars)
+	integrate*="$(vars[k])[localindex]+=Δ$(vars[k])\n"
   end
+  integrate="""# integrate
+  @sync for p in workers()
+  @spawnat p begin
+  for idx=1:syncIter
+  localindex=localindexes($(vars[1]))
+  $integrate
+  end #end of sync
+  end #end of begin
+  end #end of workers
+  """
 
 
-  if model.nCores>0
-    for var in vars
-    reg= Regex("(?<=\\b)($var)(?=\\b)")
-    diffEqs=map(diffEq->replace(diffEq,reg,s"\1[localindex]"),diffEqs)
-    end
+  for var in vars
+  reg= Regex("(?<=\\b)($var)(?=\\b)")
+  diffEqs=map(diffEq->replace(diffEq,reg,s"\1[localindex]"),diffEqs)
   end
 
 
@@ -228,7 +208,7 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   if !isempty(model.record)
     println(fid,"# initialize Record")
     for k=1:length(vars)
-      println(fid,"$(vars[k])Record=zeros($(length(model.record)),$iteration)")
+      println(fid,"$(vars[k])Record=zeros($(length(model.record)),iteration)")
     end
     println(fid)
 
@@ -239,16 +219,18 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   else
     record=""
   end
-  
+
   # Memory use after allocation
   str="""
   if Sys.OS_NAME == :Linux
     println("Memory use after allocation:")
-    run(pipeline(`free -oh`, `grep -v Swap`))
+    run(pipeline(`free -og`, `grep -v Swap`))
+  elseif Sys.OS_NAME == :Windows
+    # println("Memory use before allocation:")
+    # run(`wmic OS get FreePhysicalMemory /Value`)
   end
   """
   println(fid,str)
-  
   # print status
   println(fid,"# print status")
   str="""
@@ -295,6 +277,9 @@ function buildNetwork(;name="temp",model=NetworkModel(),method="Euler1",duration
   println(fid,"$name(20)")
   println(fid,"$name(20)")
   println(fid,"$name($iteration)")
+
+  # post-processing
+  println(fid,"\n",model.postProcs)
 
   # close file, open file
   close(fid)

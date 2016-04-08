@@ -1,6 +1,6 @@
-export NetworkModel
+export networkModel
 
-type NetworkModel
+type networkModel
   dt::Float64
   groups::Dict
   parameters::AbstractString
@@ -16,5 +16,6 @@ type NetworkModel
   solver::AbstractString
   synctime::Float64
   saveVars::Array
-  NetworkModel()=new(0.1,Dict(),"","","","","","","","",[],0,"Euler1",0.0,[])
-end 
+  postProcs::AbstractString
+  networkModel()=new(0.1,Dict(),"","","","","","","","",[],1,"Euler1",0.0,[],"")
+end
